@@ -1,0 +1,97 @@
+# Title: Dislocation Characterization in OVITO
+
+# Description: This script analyzes dislocation segments in a crystal structure and classifies them into screw, edge, or mixed types based on the angle between their line direction and Burgers vector. It then calculates the total length of each dislocation type and stores the results as attributes in the OVITO data pipeline.
+
+# Author: Prashant Dwivedi
+# Date: 2023-12-10
+
+## Citation
+
+#If you use this script in your research, please cite the following articles:
+
+# [DOI: 10.1016/j.jnucmat.2024.155289](https://doi.org/10.1016/j.jnucmat.2024.155289)
+# [DOI: 10.1016/j.jnucmat.2024.155042](https://doi.org/10.1016/j.jnucmat.2024.155042)
+
+# ------------------------------------------------------------------------------
+
+from ovito.data import *
+import numpy as np
+import numpy.linalg as la  # Use 'la' alias for brevity
+
+def get_angle(a, b):
+    """Calculates the angle between two vectors in radians.
+
+    Args:
+      a (numpy.ndarray): The first vector.
+      b (numpy.ndarray): The second vector.
+
+    Returns:
+      float: The angle between the vectors in radians.
+    """
+    inner = np.inner(a, b)
+    norms = la.norm(a) * la.norm(b)
+    cos_theta = np.abs(inner / norms)  # Ensure cosine is positive
+    theta_rad = np.arccos(np.clip(cos_theta, -1, 1))  # Clip for numerical stability
+    return theta_rad
+
+def classify_dislocation(segment):
+    """Classifies a dislocation segment into screw, edge, or mixed type.
+
+    Args:
+      segment (ovito.data.DislocationSegment): The dislocation segment to classify.
+
+    Returns:
+      tuple: A tuple containing the lengths of screw, edge, and mixed components.
+    """
+    screw_length = 0.0
+    edge_length = 0.0
+    mixed_length = 0.0
+
+    for i in range(segment.points.shape[0] - 1):
+        disloc_line = segment.points[i+1] - segment.points[i]
+        segment_length = la.norm(disloc_line)
+        line_bv_ang_deg = np.rad2deg(get_angle(disloc_line, segment.spatial_burgers_vector))
+
+        if line_bv_ang_deg <= 30:
+            screw_length += segment_length
+        elif line_bv_ang_deg >= 60:
+            edge_length += segment_length
+        else:
+            mixed_length += segment_length
+
+    return screw_length, edge_length, mixed_length
+
+def modify(frame, data):
+    """Calculates the total length of screw, edge, and mixed dislocations in the system.
+
+    Args:
+      frame (ovito.data.Frame): The current animation frame.
+      data (ovito.data.DataCollection): The data collection associated with the frame.
+    """
+    screw_length = 0.0
+    edge_length = 0.0
+    mixed_length = 0.0
+
+    for segment in data.dislocations.segments:
+        screw_seg, edge_seg, mixed_seg = classify_dislocation(segment)
+        screw_length += screw_seg
+        edge_length += edge_seg
+        mixed_length += mixed_seg
+
+    total_length = screw_length + edge_length + mixed_length
+
+    data.attributes['Screw'] = screw_length
+    data.attributes['Edge'] = edge_length
+    data.attributes['Mixed'] = mixed_length
+    data.attributes['Total'] = total_length
+
+    print('-------------------------------------------')
+    print('Screw Length:', screw_length)
+    print('Edge Length:', edge_length)
+    print('Mixed Length:', mixed_length)
+    print('Total Length:', total_length)
+    print('-------------------------------------------')
+
+# Usage example:
+# Assuming you have already loaded a CNA file into OVITO, you would apply this 
+# modifier script to it.
